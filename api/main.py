@@ -49,11 +49,15 @@ def run_pipeline_sync(repo: str, pr_number: int, pr_url: str):
     }
     try:
         print(f"Pipeline starting for PR #{pr_number} in {repo}")
+        print(f"Invoking graph...")
         final_state = promptci_graph.invoke(initial_state)
+        print(f"Graph complete. Saving run...")
         save_run(final_state)
         print(f"Pipeline complete for PR #{pr_number} — {final_state.get('recommendation')}")
     except Exception as e:
+        import traceback
         print(f"Pipeline error: {e}")
+        print(traceback.format_exc())
 
 
 @app.get("/")
@@ -176,3 +180,4 @@ async def history(repo: str, prompt_file: str):
 @app.get("/runs")
 async def all_runs(repo: str):
     return get_all_runs(repo)
+
