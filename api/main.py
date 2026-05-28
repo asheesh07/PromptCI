@@ -40,24 +40,25 @@ def verify_signature(payload: bytes, signature: str) -> bool:
 
 
 def run_pipeline_sync(repo: str, pr_number: int, pr_url: str):
-    initial_state = {
-        "pr_url": pr_url,
-        "repo": repo,
-        "pr_number": pr_number,
-        "node_trace": [],
-        "error": None
-    }
+    import traceback
+    import sys
+    print(f"Python: {sys.executable}")
+    print(f"CWD: {os.getcwd()}")
+    print(f"Files: {os.listdir('.')}")
+    
+    # test MCP client
     try:
-        print(f"Pipeline starting for PR #{pr_number} in {repo}")
-        print(f"Invoking graph...")
-        final_state = promptci_graph.invoke(initial_state)
-        print(f"Graph complete. Saving run...")
-        save_run(final_state)
-        print(f"Pipeline complete for PR #{pr_number} — {final_state.get('recommendation')}")
+        from agent.mcp_client import mcp
+        print("MCP client imported OK")
+        result = mcp.call_tool("get_pr_metadata", {
+            "repo": repo,
+            "pr_number": pr_number
+        })
+        print(f"MCP test result: {result[:100]}")
     except Exception as e:
-        import traceback
-        print(f"Pipeline error: {e}")
+        print(f"MCP client error: {e}")
         print(traceback.format_exc())
+        return
 
 
 @app.get("/")
