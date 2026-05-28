@@ -3,16 +3,18 @@ import json
 import hmac
 import hashlib
 import asyncio
+import threading
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 from dotenv import load_dotenv
-from db.storage import init_db, save_run, get_history, get_all_runs
 
-init_db()
 load_dotenv()
 
 from agent.graph import promptci_graph
+from db.storage import init_db, save_run, get_history, get_all_runs
+
+init_db()
 
 app = FastAPI()
 
@@ -35,6 +37,23 @@ def verify_signature(payload: bytes, signature: str) -> bool:
         hashlib.sha256
     ).hexdigest()
     return hmac.compare_digest(expected, signature)
+
+
+def run_pipeline_sync(repo: str, pr_number: int, pr_url: str):
+    initial_state = {
+        "pr_url": pr_url,
+        "repo": repo,
+        "pr_number": pr_number,
+        "node_trace": [],
+        "error": None
+    }
+    try:
+        print(f"Pipeline starting for PR #{pr_number} in {repo}")
+        final_state = promptci_graph.invoke(initial_state)
+        save_run(final_state)
+        print(f"Pipeline complete for PR #{pr_number} — {final_state.get('recommendation')}")
+    except Exception as e:
+        print(f"Pipeline error: {e}")
 
 
 @app.get("/")
@@ -79,8 +98,8 @@ async def webhook(request: Request):
             headers=headers
         )
         changed_files = [f["filename"] for f in r.json()]
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Error fetching files: {e}")
 
     prompt_changed = any(
         f.startswith("prompts/") and f.endswith(".txt")
@@ -90,24 +109,14 @@ async def webhook(request: Request):
     if not prompt_changed:
         return {"status": "ignored", "reason": "no prompt files changed"}
 
-    asyncio.create_task(run_pipeline(repo, pr_number, pr_url))
+    thread = threading.Thread(
+        target=run_pipeline_sync,
+        args=(repo, pr_number, pr_url),
+        daemon=True
+    )
+    thread.start()
 
     return {"status": "accepted", "pr": pr_number}
-
-
-async def run_pipeline(repo: str, pr_number: int, pr_url: str):
-    initial_state = {
-        "pr_url": pr_url,
-        "repo": repo,
-        "pr_number": pr_number,
-        "node_trace": [],
-        "error": None
-    }
-    try:
-        final_state=await asyncio.to_thread(promptci_graph.invoke, initial_state)
-        save_run(final_state)
-    except Exception as e:
-        print(f"Pipeline error: {e}")
 
 
 @app.get("/run")
@@ -155,13 +164,15 @@ async def run_sse(repo: str, pr_number: int):
                 "event": "error",
                 "data": json.dumps({"message": str(e)})
             }
-    @app.get("/history")
-    async def history(repo: str, prompt_file: str):
-        return get_history(repo, prompt_file)
-
-
-    @app.get("/runs")
-    async def all_runs(repo: str):
-        return get_all_runs(repo)
 
     return EventSourceResponse(event_stream())
+
+
+@app.get("/history")
+async def history(repo: str, prompt_file: str):
+    return get_history(repo, prompt_file)
+
+
+@app.get("/runs")
+async def all_runs(repo: str):
+    return get_all_runs(repo)
