@@ -6,3 +6,4 @@ httpx
 python-dotenv
 sse-starlette
 mcp
+google-genai
