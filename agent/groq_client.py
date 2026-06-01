@@ -1,7 +1,8 @@
 import os
-from google import genai
+from groq import Groq
 
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+
 
 
 def groq_chat(messages: list, max_tokens: int = 1024, retries: int = 3) -> str:
@@ -17,11 +18,12 @@ def groq_chat(messages: list, max_tokens: int = 1024, retries: int = 3) -> str:
 
     for attempt in range(retries):
         try:
-            response = client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=prompt
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=messages,
+                max_tokens=max_tokens
             )
-            return response.text.strip()
+            return response.choices[0].message.content.strip()
         except Exception as e:
             if attempt == retries - 1:
                 raise
